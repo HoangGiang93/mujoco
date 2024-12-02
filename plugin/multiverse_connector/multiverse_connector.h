@@ -18,7 +18,7 @@
 #include "multiverse_client_json.h"
 
 #include <memory>
-#include <thread>
+#include <set>
 
 #include <mujoco/mjdata.h>
 #include <mujoco/mjmodel.h>
@@ -33,8 +33,8 @@ namespace mujoco::plugin::multiverse_connector
     std::string client_port = "7500";
     std::string world_name = "world";
     std::string simulation_name = "mujoco_simulation";
-    std::map<std::string, std::vector<std::string>> send_objects = {};
-    std::map<std::string, std::vector<std::string>> receive_objects = {};
+    std::map<std::string, std::set<std::string>> send_objects = {};
+    std::map<std::string, std::set<std::string>> receive_objects = {};
   };
 
   // An multiverse_connector plugin which implements configurable MULTIVERSE_CONNECTOR control.
@@ -67,7 +67,7 @@ namespace mujoco::plugin::multiverse_connector
     static void RegisterPlugin();
 
   private:
-    MultiverseConnector(MultiverseConfig config);
+    MultiverseConnector(MultiverseConfig config, const mjModel *m);
 
     // Returns the expected number of activation variables for the instance.
     // static int ActDim(const mjModel* m, int instance, int actuator_id);
@@ -93,9 +93,8 @@ namespace mujoco::plugin::multiverse_connector
     // std::vector<int> actuators_;
 
   private:
-    std::thread connect_to_server_thread;
-
-    std::thread meta_data_thread;
+    mjModel *m_ = nullptr;
+    mjData *d_ = nullptr;
 
   private:
     void start_connect_to_server_thread() override;

@@ -98,7 +98,7 @@ namespace mujoco::plugin::multiverse_connector
     if (sensor_ids.empty())
     {
       mju_warning("Sensor not found for plugin instance %d", instance);
-      return std::unique_ptr<MultiverseConnector>(new MultiverseConnector(config));
+      return std::unique_ptr<MultiverseConnector>(new MultiverseConnector(config, m));
     }
 
     std::string send_str = GetStringAttr(m, instance, send);
@@ -127,7 +127,7 @@ namespace mujoco::plugin::multiverse_connector
               if (strcmp(attribute_name.c_str(), "position") == 0 ||
                   strcmp(attribute_name.c_str(), "quaternion") == 0)
               {
-                config.send_objects[body_name].push_back(attribute_name);
+                config.send_objects[body_name].insert(attribute_name);
               }
             }
           }
@@ -161,7 +161,8 @@ namespace mujoco::plugin::multiverse_connector
     //     return nullptr;
     //   }
     // }
-    return std::unique_ptr<MultiverseConnector>(new MultiverseConnector(config));
+
+    return std::unique_ptr<MultiverseConnector>(new MultiverseConnector(config, m));
   }
 
   void MultiverseConnector::Reset(mjtNum *plugin_state) {}
@@ -362,8 +363,8 @@ namespace mujoco::plugin::multiverse_connector
     mjp_registerPlugin(&plugin);
   }
 
-  MultiverseConnector::MultiverseConnector(MultiverseConfig config)
-      : config_(std::move(config))
+  MultiverseConnector::MultiverseConnector(MultiverseConfig config, const mjModel *m)
+      : config_(std::move(config)), m_((mjModel *)m)
   {
     server_socket_addr = config_.server_host + ":" + config_.server_port;
 
@@ -379,46 +380,212 @@ namespace mujoco::plugin::multiverse_connector
 
   void MultiverseConnector::start_connect_to_server_thread()
   {
-    connect_to_server_thread = std::thread(&MultiverseConnector::connect_to_server, this);
-    printf("666666666666666666666666\n");
+    connect_to_server();
   }
 
   void MultiverseConnector::wait_for_connect_to_server_thread_finish()
   {
-    // if (connect_to_server_thread.joinable())
-    // {
-    //   connect_to_server_thread.join();
-    // }
   }
 
   void MultiverseConnector::start_meta_data_thread()
   {
-    meta_data_thread = std::thread(&MultiverseConnector::send_and_receive_meta_data, this);
+    send_and_receive_meta_data();
   }
 
   void MultiverseConnector::wait_for_meta_data_thread_finish()
   {
-    if (meta_data_thread.joinable())
-    {
-      meta_data_thread.join();
-    }
   }
 
-  bool MultiverseConnector::init_objects(bool from_response_meta_data)
+  bool MultiverseConnector::init_objects(bool from_request_meta_data)
   {
-    if (from_response_meta_data)
+    if (from_request_meta_data)
     {
-      bind_request_meta_data();
+      if (request_meta_data_json["receive"].empty())
+      {
+        config_.receive_objects.clear();
+      }
+      if (request_meta_data_json["send"].empty())
+      {
+        config_.send_objects.clear();
+      }
+      for (const std::string &object_name : request_meta_data_json["receive"].getMemberNames())
+      {
+        for (const Json::Value &attribute_json : request_meta_data_json["receive"][object_name])
+        {
+          const std::string attribute_name = attribute_json.asString();
+          config_.receive_objects[object_name].insert(attribute_name);
+        }
+      }
+      for (const std::string &object_name : request_meta_data_json["send"].getMemberNames())
+      {
+        for (const Json::Value &attribute_json : request_meta_data_json["send"][object_name])
+        {
+          const std::string attribute_name = attribute_json.asString();
+          config_.send_objects[object_name].insert(attribute_name);
+        }
+      }
     }
-    // init_objects_callback();
+
+    std::set<std::string> objects_to_spawn;
+    std::set<std::string> objects_to_destroy;
+    for (const std::pair<const std::string, std::set<std::string>> &send_object : config_.send_objects)
+    {
+      const std::string object_name = send_object.first;
+      if (strcmp(object_name.c_str(), "body") == 0 || strcmp(object_name.c_str(), "joint") == 0) // Skip if object name is "body" or "joint"
+      {
+        continue;
+      }
+      bool stop = !send_object.second.empty(); // Skip if object has no attributes
+      for (const std::string &attribute_name : send_object.second)
+      {
+        if (strcmp(attribute_name.c_str(), "position") == 0 || strcmp(attribute_name.c_str(), "quaternion") == 0)
+        {
+          stop = false;
+        }
+      }
+      if (stop)
+      {
+        continue;
+      }
+
+      if (mj_name2id(m_, mjtObj::mjOBJ_BODY, object_name.c_str()) == -1 &&
+          mj_name2id(m_, mjtObj::mjOBJ_JOINT, object_name.c_str()) == -1 &&
+          !(config_.receive_objects.count(object_name) > 0 &&
+            config_.receive_objects[object_name].empty())) // If object does not exist as body or joint and has no receive attributes
+      {
+        objects_to_spawn.insert(object_name); // Then add object to spawn
+      }
+      else if (send_object.second.empty() == 0 &&
+               config_.receive_objects.count(object_name) > 0 &&
+               config_.receive_objects[object_name].empty()) // If object has no send attributes and has no receive attributes
+      {
+        objects_to_destroy.insert(object_name); // Then add object to destroy
+      }
+    }
+    // for (const std::string &object_name : receive_objects_json.getMemberNames())
+    // {
+    //   if (strcmp(object_name.c_str(), "body") == 0 || strcmp(object_name.c_str(), "joint") == 0)
+    //   {
+    //     continue;
+    //   }
+    //   bool stop = true;
+    //   for (const Json::Value &attribute_json : receive_objects_json[object_name])
+    //   {
+    //     const std::string attribute_name = attribute_json.asString();
+    //     if (strcmp(attribute_name.c_str(), "position") == 0 || strcmp(attribute_name.c_str(), "quaternion") == 0)
+    //     {
+    //       stop = false;
+    //     }
+    //   }
+    //   if (stop)
+    //   {
+    //     continue;
+    //   }
+
+    //   if (mj_name2id(m, mjtObj::mjOBJ_BODY, object_name.c_str()) == -1 &&
+    //       mj_name2id(m, mjtObj::mjOBJ_JOINT, object_name.c_str()) == -1 &&
+    //       mj_name2id(m, mjtObj::mjOBJ_ACTUATOR, object_name.c_str()) == -1 &&
+    //       !(send_objects_json.isMember(object_name) &&
+    //         send_objects_json[object_name].empty()))
+    //   {
+    //     objects_to_spawn.insert(object_name);
+    //   }
+    // }
+    // for (const std::string &object_name : objects_to_destroy)
+    // {
+    //   receive_objects_json.removeMember(object_name);
+    //   send_objects_json.removeMember(object_name);
+    // }
     return true;
   }
 
   void MultiverseConnector::bind_request_meta_data()
   {
-    // bind_request_meta_data_callback();
-    // request_meta_data_str = pybind11::str(request_meta_data_dict).cast<std::string>();
-    // std::replace(request_meta_data_str.begin(), request_meta_data_str.end(), '\'', '"');
+    const Json::Value api_callbacks = request_meta_data_json["api_callbacks"];
+    const Json::Value api_callbacks_response = request_meta_data_json["api_callbacks_response"];
+    request_meta_data_json.clear();
+
+    if (!api_callbacks.isNull())
+    {
+      request_meta_data_json["api_callbacks"] = api_callbacks;
+    }
+    if (!api_callbacks_response.isNull())
+    {
+      request_meta_data_json["api_callbacks_response"] = api_callbacks_response;
+    }
+
+    request_meta_data_json["meta_data"]["world_name"] = config_.world_name;
+    request_meta_data_json["meta_data"]["simulation_name"] = config_.simulation_name;
+    request_meta_data_json["meta_data"]["length_unit"] = "m";
+    request_meta_data_json["meta_data"]["angle_unit"] = "rad";
+    request_meta_data_json["meta_data"]["mass_unit"] = "kg";
+    request_meta_data_json["meta_data"]["time_unit"] = "s";
+    request_meta_data_json["meta_data"]["handedness"] = "rhs";
+
+    // for (const std::pair<std::string, std::set<std::string>> &send_object : config_.send_objects)
+    // {
+    //   const int body_id = mj_name2id(m, mjtObj::mjOBJ_BODY, send_object.first.c_str());
+    //   const int joint_id = mj_name2id(m, mjtObj::mjOBJ_JOINT, send_object.first.c_str());
+    //   const int actuator_id = mj_name2id(m, mjtObj::mjOBJ_ACTUATOR, send_object.first.c_str());
+    //   if (body_id != -1)
+    //   {
+    //     const std::string body_name = send_object.first;
+    //     for (const std::string &attribute_name : send_object.second)
+    //     {
+    //       request_meta_data_json["send"][body_name].append(attribute_name);
+    //     }
+    //   }
+    //   else if (joint_id != -1)
+    //   {
+    //     const std::string joint_name = send_object.first;
+    //     for (const std::string &attribute_name : send_object.second)
+    //     {
+    //       request_meta_data_json["send"][joint_name].append(attribute_name);
+    //     }
+    //   }
+    //   else if (actuator_id != -1)
+    //   {
+    //     const std::string actuator_name = send_object.first;
+    //     for (const std::string &attribute_name : send_object.second)
+    //     {
+    //       request_meta_data_json["send"][actuator_name].append(attribute_name);
+    //     }
+    //   }
+    // }
+
+    // for (const std::pair<std::string, std::set<std::string>> &receive_object : config_.receive_objects)
+    // {
+    //   const int body_id = mj_name2id(m, mjtObj::mjOBJ_BODY, receive_object.first.c_str());
+    //   const int joint_id = mj_name2id(m, mjtObj::mjOBJ_JOINT, receive_object.first.c_str());
+    //   const int actuator_id = mj_name2id(m, mjtObj::mjOBJ_ACTUATOR, receive_object.first.c_str());
+    //   if (body_id != -1)
+    //   {
+    //     const std::string body_name = receive_object.first;
+    //     for (const std::string &attribute_name : receive_object.second)
+    //     {
+    //       request_meta_data_json["receive"][body_name].append(attribute_name);
+    //     }
+    //   }
+    //   else if (joint_id != -1)
+    //   {
+    //     const std::string joint_name = receive_object.first;
+    //     const int qpos_id = m->jnt_qposadr[joint_id];
+    //     for (const std::string &attribute_name : receive_object.second)
+    //     {
+    //       request_meta_data_json["receive"][joint_name].append(attribute_name);
+    //     }
+    //   }
+    //   else if (actuator_id != -1)
+    //   {
+    //     const std::string actuator_name = receive_object.first;
+    //     for (const std::string &attribute_name : receive_object.second)
+    //     {
+    //       request_meta_data_json["receive"][actuator_name].append(attribute_name);
+    //     }
+    //   }
+    // }
+
+    request_meta_data_str = request_meta_data_json.toStyledString();
   }
 
   void MultiverseConnector::bind_response_meta_data()

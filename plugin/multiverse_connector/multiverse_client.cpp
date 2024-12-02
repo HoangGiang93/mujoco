@@ -44,9 +44,7 @@ enum class EMultiverseClientState : unsigned char
 
 void MultiverseClient::connect_to_server()
 {
-    printf("547984567968456\n");
     zmq_disconnect(client_socket, socket_addr.c_str());
-    printf("77777777777777777\n");
     if (should_shut_down)
     {
         return;
