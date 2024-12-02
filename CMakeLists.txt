@@ -28,7 +28,7 @@ set(MSVC_INCREMENTAL_DEFAULT ON)
 
 project(
   mujoco
-  VERSION 3.2.6
+  VERSION 3.2.5
   DESCRIPTION "MuJoCo Physics Simulator"
   HOMEPAGE_URL "https://mujoco.org"
 )
@@ -88,6 +88,7 @@ add_subdirectory(plugin/elasticity)
 add_subdirectory(plugin/actuator)
 add_subdirectory(plugin/sensor)
 add_subdirectory(plugin/sdf)
+add_subdirectory(plugin/multiverse_connector)
 add_subdirectory(src/engine)
 add_subdirectory(src/user)
 add_subdirectory(src/xml)
