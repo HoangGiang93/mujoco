@@ -10,16 +10,31 @@
   <extension>
     <plugin plugin="mujoco.multiverse_connector">
       <instance name="client_1">
-        <config key="multiverse_server" value="tcp://127.0.0.1:7000"/>
-        <config key="multiverse_client" value="tcp://127.0.0.1:7500"/>
-        <config key="send" value="{'b1': ['position', 'quaternion']}" />
+        <config key="server_host" value="tcp://127.0.0.1"/>
+        <config key="server_port" value="7000"/>
+        <config key="client_port" value="7501"/>
+        <config key="world_name" value="world"/>
+        <config key="simulation_name" value="sim_1"/>
+        <config key="send" value="{'b1': ['position', 'quaternion'], 'b2': ['position']}" />
       </instance>
+
+      <!-- <instance name="client_2">
+        <config key="server_host" value="tcp://127.0.0.1"/>
+        <config key="server_port" value="7000"/>
+        <config key="client_port" value="7502"/>
+        <config key="world_name" value="world"/>
+        <config key="simulation_name" value="sim_2"/>
+        <config key="send" value="{'b1': ['position', 'quaternion'], 'b2': ['quaternion']}" />
+      </instance> -->
     </plugin>
   </extension>
 
   <sensor>
     <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="body" objname="b1" />
     <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="body" objname="b2" />
+
+    <!-- <plugin plugin="mujoco.multiverse_connector" instance="client_2" objtype="body" objname="b1" />
+    <plugin plugin="mujoco.multiverse_connector" instance="client_2" objtype="body" objname="b2" /> -->
   </sensor>
 
   <default>

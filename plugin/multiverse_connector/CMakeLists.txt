@@ -17,15 +17,19 @@ set(MUJOCO_MULTIVERSE_CONNECTOR_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 
 set(MUJOCO_MULTIVERSE_CONNECTOR_SRCS
-    multiverse_connector.cc
-    multiverse_connector.h
-    register.cc
+  multiverse_client.cpp
+  multiverse_client.h
+  multiverse_client_json.cpp
+  multiverse_client_json.h
+  multiverse_connector.cc
+  multiverse_connector.h
+  register.cc
 )
 
 add_library(multiverse_connector SHARED)
 target_sources(multiverse_connector PRIVATE ${MUJOCO_MULTIVERSE_CONNECTOR_SRCS})
 target_include_directories(multiverse_connector PRIVATE ${MUJOCO_MULTIVERSE_CONNECTOR_INCLUDE})
-target_link_libraries(multiverse_connector PRIVATE mujoco jsoncpp)
+target_link_libraries(multiverse_connector PRIVATE mujoco jsoncpp zmq atomic)
 target_compile_options(
   multiverse_connector
   PRIVATE ${AVX_COMPILE_OPTIONS}

@@ -14,13 +14,7 @@
 
 #include "multiverse_connector.h"
 
-#include <cstdint>
-#include <cstdlib>
-#include <memory>
-#include <cstring>
-#include <utility>
 #include <boost/algorithm/string/replace.hpp>
-#include <vector>
 #ifdef __linux__
 #include <jsoncpp/json/reader.h>
 #elif _WIN32
@@ -29,13 +23,30 @@
 
 #include <mujoco/mujoco.h>
 
+std::vector<int> get_sensor_ids(const mjModel *m, int instance)
+{
+  std::vector<int> sensor_ids;
+  for (int sensor_id = 0; sensor_id < m->nsensor; sensor_id++)
+  {
+    if (m->sensor_type[sensor_id] == mjSENS_PLUGIN &&
+        m->sensor_plugin[sensor_id] == instance)
+    {
+      sensor_ids.push_back(sensor_id);
+    }
+  }
+  return sensor_ids;
+}
+
 namespace mujoco::plugin::multiverse_connector
 {
   namespace
   {
 
-    constexpr char multiverse_server[] = "multiverse_server";
-    constexpr char multiverse_client[] = "multiverse_client";
+    constexpr char server_host[] = "server_host";
+    constexpr char server_port[] = "server_port";
+    constexpr char client_port[] = "client_port";
+    constexpr char world_name[] = "world_name";
+    constexpr char simulation_name[] = "simulation_name";
     constexpr char send[] = "send";
 
     std::string GetStringAttr(const mjModel *m, int instance, const char *attr, const std::string &default_value = "")
@@ -77,14 +88,26 @@ namespace mujoco::plugin::multiverse_connector
   std::unique_ptr<MultiverseConnector> MultiverseConnector::Create(const mjModel *m, int instance)
   {
     MultiverseConfig config;
-    config.server = GetStringAttr(m, instance, multiverse_server, config.server);
-    config.client = GetStringAttr(m, instance, multiverse_client, config.client);
+    config.server_host = GetStringAttr(m, instance, server_host, config.server_host);
+    config.server_port = GetStringAttr(m, instance, server_port, config.server_port);
+    config.client_port = GetStringAttr(m, instance, client_port, config.client_port);
+    config.world_name = GetStringAttr(m, instance, world_name, config.world_name);
+    config.simulation_name = GetStringAttr(m, instance, simulation_name, config.simulation_name);
 
-    printf("Multiverse Server: %s - Multiverse Client: %s\n", config.server.c_str(), config.client.c_str());
-    for (int sensor_id = 0; sensor_id < m->nsensor; sensor_id++)
+    const std::vector<int> sensor_ids = get_sensor_ids(m, instance);
+    if (sensor_ids.empty())
     {
-      if (m->sensor_type[sensor_id] == mjSENS_PLUGIN &&
-          m->sensor_plugin[sensor_id] == instance)
+      mju_warning("Sensor not found for plugin instance %d", instance);
+      return std::unique_ptr<MultiverseConnector>(new MultiverseConnector(config));
+    }
+
+    std::string send_str = GetStringAttr(m, instance, send);
+    boost::replace_all(send_str, "'", "\"");
+    Json::Value send_json;
+    Json::Reader reader;
+    if (reader.parse(send_str, send_json) && !send_str.empty())
+    {
+      for (const int sensor_id : sensor_ids)
       {
         if (m->sensor_objtype[sensor_id] == mjOBJ_BODY)
         {
@@ -93,13 +116,8 @@ namespace mujoco::plugin::multiverse_connector
           if (!body_name)
           {
             mju_warning_i("Body id %d must have a name\n", body_id);
-            continue;
           }
-          std::string send_str = GetStringAttr(m, instance, send);
-          boost::replace_all(send_str, "'", "\"");
-          Json::Value send_json;
-          Json::Reader reader;
-          if (reader.parse(send_str, send_json) && !send_str.empty())
+          else
           {
             config.send_objects[body_name] = {};
 
@@ -113,17 +131,17 @@ namespace mujoco::plugin::multiverse_connector
               }
             }
           }
-          else
-          {
-            mju_warning_s("Cannot parse %s into a map\n", send_str.c_str());
-          }
         }
       }
+    }
+    else
+    {
+      mju_warning_s("Cannot parse %s into a map\n", send_str.c_str());
     }
 
     if (config.send_objects.empty())
     {
-      mju_warning("send not found for plugin instance %d", instance);
+      mju_warning("No objects to send for plugin instance %d", instance);
     }
 
     // // Validate actnum values for all actuators:
@@ -202,6 +220,7 @@ namespace mujoco::plugin::multiverse_connector
 
   void MultiverseConnector::Compute(const mjModel *m, mjData *d, int instance)
   {
+    const std::vector<int> sensor_ids = get_sensor_ids(m, instance);
     // for (int i = 0; i < actuators_.size(); i++) {
     //   int actuator_idx = actuators_[i];
     //   State state = GetState(m, d, actuator_idx);
@@ -228,6 +247,26 @@ namespace mujoco::plugin::multiverse_connector
     //   d->actuator_force[actuator_idx] = config_.p_gain * error +
     //                                     config_.d_gain * error_dot +
     //                                     config_.i_gain * integral;
+    // }
+
+    // for (const int sensor_id : sensor_ids)
+    // {
+    //   const int body_id = m->sensor_objid[sensor_id];
+    //   const char *body_name = mj_id2name(m, mjtObj::mjOBJ_BODY, body_id);
+    //   printf("Time: %f - %d - %d - %s\n", d->time, instance, sensor_id, body_name);
+    //   for (const std::string &attribute_name : config_.send_objects[body_name])
+    //   {
+    //     if (strcmp(attribute_name.c_str(), "position") == 0)
+    //     {
+    //       const mjtNum *position = d->xpos + 3 * body_id;
+    //       printf("Position: %f - %f - %f\n", position[0], position[1], position[2]);
+    //     }
+    //     else if (strcmp(attribute_name.c_str(), "quaternion") == 0)
+    //     {
+    //       const mjtNum *quaternion = d->xquat + 4 * body_id;
+    //       printf("Quaternion: %f - %f - %f - %f\n", quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+    //     }
+    //   }
     // }
   }
 
@@ -266,7 +305,7 @@ namespace mujoco::plugin::multiverse_connector
     plugin.name = "mujoco.multiverse_connector";
     plugin.capabilityflags |= mjPLUGIN_ACTUATOR | mjPLUGIN_SENSOR;
 
-    std::vector<const char *> attributes = {multiverse_server, multiverse_client, send};
+    std::vector<const char *> attributes = {server_host, server_port, client_port, world_name, simulation_name, send};
     plugin.nattribute = attributes.size();
     plugin.attributes = attributes.data();
     plugin.nstate = MultiverseConnector::StateSize;
@@ -324,6 +363,206 @@ namespace mujoco::plugin::multiverse_connector
   }
 
   MultiverseConnector::MultiverseConnector(MultiverseConfig config)
-      : config_(std::move(config)) {}
+      : config_(std::move(config))
+  {
+    server_socket_addr = config_.server_host + ":" + config_.server_port;
+
+    host = config_.server_host;
+    port = config_.client_port;
+
+    *world_time = 0.0;
+
+    printf("Multiverse Server: %s - Multiverse Client: %s:%s\n", server_socket_addr.c_str(), host.c_str(), port.c_str());
+
+    connect();
+  }
+
+  void MultiverseConnector::start_connect_to_server_thread()
+  {
+    connect_to_server_thread = std::thread(&MultiverseConnector::connect_to_server, this);
+    printf("666666666666666666666666\n");
+  }
+
+  void MultiverseConnector::wait_for_connect_to_server_thread_finish()
+  {
+    // if (connect_to_server_thread.joinable())
+    // {
+    //   connect_to_server_thread.join();
+    // }
+  }
+
+  void MultiverseConnector::start_meta_data_thread()
+  {
+    meta_data_thread = std::thread(&MultiverseConnector::send_and_receive_meta_data, this);
+  }
+
+  void MultiverseConnector::wait_for_meta_data_thread_finish()
+  {
+    if (meta_data_thread.joinable())
+    {
+      meta_data_thread.join();
+    }
+  }
+
+  bool MultiverseConnector::init_objects(bool from_response_meta_data)
+  {
+    if (from_response_meta_data)
+    {
+      bind_request_meta_data();
+    }
+    // init_objects_callback();
+    return true;
+  }
+
+  void MultiverseConnector::bind_request_meta_data()
+  {
+    // bind_request_meta_data_callback();
+    // request_meta_data_str = pybind11::str(request_meta_data_dict).cast<std::string>();
+    // std::replace(request_meta_data_str.begin(), request_meta_data_str.end(), '\'', '"');
+  }
+
+  void MultiverseConnector::bind_response_meta_data()
+  {
+    // bind_response_meta_data_callback();
+  }
+
+  void MultiverseConnector::bind_api_callbacks()
+  {
+    // if (!response_meta_data_dict.contains("api_callbacks"))
+    // {
+    //   return;
+    // }
+    // pybind11::list api_callbacks_list = response_meta_data_dict["api_callbacks"].cast<pybind11::list>();
+    // for (size_t i = 0; i < pybind11::len(api_callbacks_list); i++)
+    // {
+    //   const pybind11::dict api_callback_dict = api_callbacks_list[i].cast<pybind11::dict>();
+    //   for (auto api_callback_pair : api_callback_dict)
+    //   {
+    //     const std::string api_callback_name = api_callback_pair.first.cast<std::string>();
+    //     if (api_callbacks.find(api_callback_name) == api_callbacks.end())
+    //     {
+    //       continue;
+    //     }
+    //     const pybind11::list api_callback_arguments = api_callback_pair.second.cast<pybind11::list>();
+    //     api_callbacks[api_callback_name.c_str()](api_callback_arguments);
+    //   }
+    // }
+  }
+
+  void MultiverseConnector::bind_api_callbacks_response()
+  {
+    // if (!response_meta_data_dict.contains("api_callbacks"))
+    // {
+    //   return;
+    // }
+    // request_meta_data_dict["api_callbacks_response"] = pybind11::list();
+    // pybind11::list api_callbacks_list = response_meta_data_dict["api_callbacks"].cast<pybind11::list>();
+    // for (size_t i = 0; i < pybind11::len(api_callbacks_list); i++)
+    // {
+    //   const pybind11::dict api_callback_dict = api_callbacks_list[i].cast<pybind11::dict>();
+    //   for (auto api_callback_pair : api_callback_dict)
+    //   {
+    //     const std::string api_callback_name = api_callback_pair.first.cast<std::string>();
+    //     pybind11::dict api_callback_dict_request;
+    //     if (api_callbacks_response.find(api_callback_name) != api_callbacks_response.end())
+    //     {
+    //       const pybind11::list api_callback_arguments = api_callback_pair.second.cast<pybind11::list>();
+    //       api_callback_dict_request[api_callback_name.c_str()] = api_callbacks_response[api_callback_name.c_str()](api_callback_arguments);
+    //     }
+    //     else
+    //     {
+    //       api_callback_dict_request[api_callback_name.c_str()] = pybind11::list();
+    //       api_callback_dict_request[api_callback_name.c_str()].cast<pybind11::list>().append("not implemented");
+    //     }
+    //     request_meta_data_dict["api_callbacks_response"].cast<pybind11::list>().append(api_callback_dict_request);
+    //   }
+    // }
+  }
+
+  void MultiverseConnector::clean_up()
+  {
+    // TODO: Find a clean way to clear the data because it's unsure if the data is still in use.
+
+    // send_data.clear();
+
+    // receive_data.clear();
+  }
+
+  void MultiverseConnector::reset()
+  {
+    // printf("[Client %s] Resetting the client (will be implemented).\n", port.c_str());
+  }
+
+  void MultiverseConnector::init_send_and_receive_data()
+  {
+    // if (send_buffer.buffer_double.size != send_data_double.size())
+    // {
+    //   send_data_double = std::vector<double>(send_buffer.buffer_double.size, 0.0);
+    // }
+    // if (send_buffer.buffer_uint8_t.size != send_data_uint8_t.size())
+    // {
+    //   send_data_uint8_t = std::vector<uint8_t>(send_buffer.buffer_uint8_t.size, 0);
+    // }
+    // if (send_buffer.buffer_uint16_t.size != send_data_uint16_t.size())
+    // {
+    //   send_data_uint16_t = std::vector<uint16_t>(send_buffer.buffer_uint16_t.size, 0);
+    // }
+    // if (receive_buffer.buffer_double.size != receive_data_double.size())
+    // {
+    //   receive_data_double = std::vector<double>(receive_buffer.buffer_double.size, 0.0);
+    // }
+    // if (receive_buffer.buffer_uint8_t.size != receive_data_uint8_t.size())
+    // {
+    //   receive_data_uint8_t = std::vector<uint8_t>(receive_buffer.buffer_uint8_t.size, 0);
+    // }
+    // if (receive_buffer.buffer_uint16_t.size != receive_data_uint16_t.size())
+    // {
+    //   receive_data_uint16_t = std::vector<uint16_t>(receive_buffer.buffer_uint16_t.size, 0);
+    // }
+  }
+
+  void MultiverseConnector::bind_send_data()
+  {
+    // bind_send_data_callback();
+    // if (send_data_double.size() != send_buffer.buffer_double.size || send_data_uint8_t.size() != send_buffer.buffer_uint8_t.size)
+    // {
+    //   printf("[Client %s] The size of in_send_data [%zu - %zu - %zu] does not match with send_buffer_size [%zu - %zu - %zu].\n",
+    //          port.c_str(),
+    //          send_data_double.size(),
+    //          send_data_uint8_t.size(),
+    //          send_data_uint16_t.size(),
+    //          send_buffer.buffer_double.size,
+    //          send_buffer.buffer_uint8_t.size,
+    //          send_buffer.buffer_uint16_t.size);
+    //   return;
+    // }
+
+    // std::copy(send_data_double.begin(), send_data_double.end(), send_buffer.buffer_double.data);
+    // std::copy(send_data_uint8_t.begin(), send_data_uint8_t.end(), send_buffer.buffer_uint8_t.data);
+    // std::copy(send_data_uint16_t.begin(), send_data_uint16_t.end(), send_buffer.buffer_uint16_t.data);
+  }
+
+  void MultiverseConnector::bind_receive_data()
+  {
+    // if (receive_data_double.size() != receive_buffer.buffer_double.size ||
+    //     receive_data_uint8_t.size() != receive_buffer.buffer_uint8_t.size ||
+    //     receive_data_uint16_t.size() != receive_buffer.buffer_uint16_t.size)
+    // {
+    //   printf("[Client %s] The size of receive_data [%zu - %zu - %zu] does not match with receive_buffer_size [%zu - %zu - %zu].\n",
+    //          port.c_str(),
+    //          receive_data_double.size(),
+    //          receive_data_uint8_t.size(),
+    //          receive_data_uint16_t.size(),
+    //          receive_buffer.buffer_double.size,
+    //          receive_buffer.buffer_uint8_t.size,
+    //          receive_buffer.buffer_uint16_t.size);
+    //   return;
+    // }
+
+    // std::copy(receive_buffer.buffer_double.data, receive_buffer.buffer_double.data + receive_buffer.buffer_double.size, receive_data_double.begin());
+    // std::copy(receive_buffer.buffer_uint8_t.data, receive_buffer.buffer_uint8_t.data + receive_buffer.buffer_uint8_t.size, receive_data_uint8_t.begin());
+    // std::copy(receive_buffer.buffer_uint16_t.data, receive_buffer.buffer_uint16_t.data + receive_buffer.buffer_uint16_t.size, receive_data_uint16_t.begin());
+    // bind_receive_data_callback();
+  }
 
 } // namespace mujoco::plugin::multiverse_connector
