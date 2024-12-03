@@ -2456,7 +2456,6 @@ const char* mj_validateReferences(const mjModel* m) {
     }
     int sensor_adr = m->sensor_adr[i];
     if (sensor_adr < 0 || sensor_adr + sensor_size > m->nsensordata) {
-      printf("sensor_adr: %d, sensor_size: %d, nsensordata: %d\n", sensor_adr, sensor_size, m->nsensordata);
       return "Invalid model: sensor_adr out of bounds.";
     }
     int nobj = numObjects(m, m->sensor_objtype[i]);
