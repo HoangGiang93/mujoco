@@ -43,7 +43,7 @@ namespace mujoco::plugin::multiverse_connector
   public:
     // Returns an instance of MultiverseConnector. The result can be null in case of
     // misconfiguration.
-    static std::unique_ptr<MultiverseConnector> Create(const mjModel *m, int instance);
+    static std::unique_ptr<MultiverseConnector> Create(const mjModel *m, mjData *d, int instance);
 
     // Returns the number of state variables for the plugin instance
     static int StateSize(const mjModel *m, int instance);
@@ -67,7 +67,7 @@ namespace mujoco::plugin::multiverse_connector
     static void RegisterPlugin();
 
   private:
-    MultiverseConnector(MultiverseConfig config, const mjModel *m);
+    MultiverseConnector(MultiverseConfig config, const mjModel *m, mjData *d);
 
     // Returns the expected number of activation variables for the instance.
     // static int ActDim(const mjModel* m, int instance, int actuator_id);
@@ -94,7 +94,10 @@ namespace mujoco::plugin::multiverse_connector
 
   private:
     mjModel *m_ = nullptr;
+
     mjData *d_ = nullptr;
+
+    std::vector<std::pair<int, mjtNum*>> send_data_pairs;
 
   private:
     void start_connect_to_server_thread() override;
