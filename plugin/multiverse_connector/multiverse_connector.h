@@ -17,7 +17,6 @@
 
 #include "multiverse_client_json.h"
 
-#include <memory>
 #include <set>
 
 #include <mujoco/mjdata.h>
@@ -43,7 +42,7 @@ namespace mujoco::plugin::multiverse_connector
   public:
     // Returns an instance of MultiverseConnector. The result can be null in case of
     // misconfiguration.
-    static std::unique_ptr<MultiverseConnector> Create(const mjModel *m, mjData *d, int instance);
+    static MultiverseConnector *Create(const mjModel *m, mjData *d, int instance);
 
     // Returns the number of state variables for the plugin instance
     static int StateSize(const mjModel *m, int instance);

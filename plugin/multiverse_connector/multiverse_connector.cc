@@ -118,7 +118,7 @@ namespace mujoco::plugin::multiverse_connector
 
   } // namespace
 
-  std::unique_ptr<MultiverseConnector> MultiverseConnector::Create(const mjModel *m, mjData *d, int instance)
+  MultiverseConnector *MultiverseConnector::Create(const mjModel *m, mjData *d, int instance)
   {
     MultiverseConfig config;
     config.server_host = GetStringAttr(m, instance, server_host, config.server_host);
@@ -131,7 +131,7 @@ namespace mujoco::plugin::multiverse_connector
     if (sensor_ids.empty())
     {
       mju_warning("Sensor not found for plugin instance %d", instance);
-      return std::unique_ptr<MultiverseConnector>(new MultiverseConnector(config, m, d));
+      return new MultiverseConnector(config, m, d);
     }
 
     std::string send_str = GetStringAttr(m, instance, send);
@@ -191,7 +191,7 @@ namespace mujoco::plugin::multiverse_connector
     //   }
     // }
 
-    return std::unique_ptr<MultiverseConnector>(new MultiverseConnector(config, m, d));
+    return new MultiverseConnector(config, m, d);
   }
 
   void MultiverseConnector::Reset(mjtNum *plugin_state) {}
@@ -399,12 +399,12 @@ namespace mujoco::plugin::multiverse_connector
 
     plugin.init = +[](const mjModel *m, mjData *d, int instance)
     {
-      std::unique_ptr<MultiverseConnector> multiverse_connector = MultiverseConnector::Create(m, d, instance);
+      MultiverseConnector *multiverse_connector = MultiverseConnector::Create(m, d, instance);
       if (multiverse_connector == nullptr)
       {
         return -1;
       }
-      d->plugin_data[instance] = reinterpret_cast<uintptr_t>(multiverse_connector.release());
+      d->plugin_data[instance] = reinterpret_cast<uintptr_t>(multiverse_connector);
       return 0;
     };
     plugin.destroy = +[](mjData *d, int instance)
@@ -958,27 +958,29 @@ namespace mujoco::plugin::multiverse_connector
       {
         const std::string body_name = send_object.first;
         int sensor_id = get_sensor_id(m_, mjOBJ_BODY, body_id);
+        printf("Body name: %s Sensor id: %d\n", body_name.c_str(), sensor_id);
         if (sensor_id == -1)
         {
           mju_warning("Sensor id for body %s not found\n", body_name.c_str());
           continue;
         }
+        int sensor_adr = m_->sensor_adr[sensor_id];
         if (mocap_id != -1)
         {
           for (const std::string &attribute_name : send_object.second)
           {
             if (strcmp(attribute_name.c_str(), "position") == 0)
             {
-              send_data_pairs.emplace_back(sensor_id++, &d_->mocap_pos[3 * mocap_id]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->mocap_pos[3 * mocap_id + 1]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->mocap_pos[3 * mocap_id + 2]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->mocap_pos[3 * mocap_id]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->mocap_pos[3 * mocap_id + 1]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->mocap_pos[3 * mocap_id + 2]);
             }
             else if (strcmp(attribute_name.c_str(), "quaternion") == 0)
             {
-              send_data_pairs.emplace_back(sensor_id++, &d_->mocap_quat[4 * mocap_id]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->mocap_quat[4 * mocap_id + 1]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->mocap_quat[4 * mocap_id + 2]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->mocap_quat[4 * mocap_id + 3]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->mocap_quat[4 * mocap_id]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->mocap_quat[4 * mocap_id + 1]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->mocap_quat[4 * mocap_id + 2]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->mocap_quat[4 * mocap_id + 3]);
             }
             else
             {
@@ -993,16 +995,16 @@ namespace mujoco::plugin::multiverse_connector
           {
             if (strcmp(attribute_name.c_str(), "position") == 0)
             {
-              send_data_pairs.emplace_back(sensor_id++, &d_->xpos[3 * body_id]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->xpos[3 * body_id + 1]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->xpos[3 * body_id + 2]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->xpos[3 * body_id]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->xpos[3 * body_id + 1]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->xpos[3 * body_id + 2]);
             }
             else if (strcmp(attribute_name.c_str(), "quaternion") == 0)
             {
-              send_data_pairs.emplace_back(sensor_id++, &d_->xquat[4 * body_id]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->xquat[4 * body_id + 1]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->xquat[4 * body_id + 2]);
-              send_data_pairs.emplace_back(sensor_id++, &d_->xquat[4 * body_id + 3]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->xquat[4 * body_id]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->xquat[4 * body_id + 1]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->xquat[4 * body_id + 2]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->xquat[4 * body_id + 3]);
             }
             // else if (strcmp(attribute_name.c_str(), "force") == 0 &&
             //          m->body_dofnum[body_id] == 6 &&
@@ -1267,6 +1269,7 @@ namespace mujoco::plugin::multiverse_connector
 
   void MultiverseConnector::bind_send_data()
   {
+    *world_time = d_->time;
     for (const std::pair<int, double*>& send_data_pair : send_data_pairs)
     {
       const int sensor_id = send_data_pair.first;
