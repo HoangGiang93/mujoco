@@ -68,35 +68,16 @@ namespace mujoco::plugin::multiverse_connector
   private:
     MultiverseConnector(MultiverseConfig config, const mjModel *m, mjData *d);
 
-    // Returns the expected number of activation variables for the instance.
-    // static int ActDim(const mjModel* m, int instance, int actuator_id);
-
-    // struct State {
-    //   mjtNum previous_ctrl = 0;
-    //   // if using slew rate limits, mjData.act will contain an activation variable
-    //   // with the last ctrl value. If `false`, that value should be ignored,
-    //   // because it hasn't been set yet.
-    //   bool previous_ctrl_exists = false;
-    //   mjtNum integral = 0;
-    // };
-    // Reads data from d->act and returns it as a State struct.
-    // State GetState(const mjModel* m, mjData* d, int actuator_idx) const;
-
-    // Returns the MULTIVERSE_CONNECTOR setpoint, which is normally d->ctrl, but can be d->act for
-    // actuators with dyntype != none.
-    // mjtNum GetCtrl(const mjModel* m, const mjData* d, int actuator_idx,
-    //                const State& state, bool actearly) const;
-
     MultiverseConfig config_;
-    // set of multiverse_connector IDs controlled by this plugin instance.
-    // std::vector<int> actuators_;
 
   private:
     mjModel *m_ = nullptr;
 
     mjData *d_ = nullptr;
 
-    std::vector<std::pair<int, mjtNum*>> send_data_pairs;
+    std::vector<mjtNum*> send_data_vec;
+
+    std::vector<mjtNum*> receive_data_vec;
 
     std::map<int, mjtNum *> contact_efforts;
 
