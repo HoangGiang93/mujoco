@@ -1,0 +1,34 @@
+<mujoco model="MultiverseConnector">
+  <extension>
+    <plugin plugin="mujoco.multiverse_connector">
+      <instance name="client_1">
+        <config key="server_host" value="tcp://127.0.0.1"/>
+        <config key="server_port" value="7000"/>
+        <config key="client_port" value="7501"/>
+        <config key="world_name" value="world"/>
+        <config key="simulation_name" value="sim_1"/>
+        <config key="send" value="{'torso': ['position', 'quaternion', 'relative_velocity', 'force', 'torque'], 'lower_waist': ['position'], 'abdomen_z': ['joint_rvalue', 'joint_angular_velocity', 'joint_torque']}" />
+      </instance>
+
+      <!-- <instance name="client_2">
+        <config key="server_host" value="tcp://127.0.0.1"/>
+        <config key="server_port" value="7000"/>
+        <config key="client_port" value="7502"/>
+        <config key="world_name" value="world"/>
+        <config key="simulation_name" value="sim_2"/>
+        <config key="send" value="{'torso': ['position', 'quaternion'], 'lower_waist': ['quaternion']}" />
+      </instance> -->
+    </plugin>
+  </extension>
+
+  <sensor>
+    <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="body" objname="torso" />
+    <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="body" objname="lower_waist" />
+    <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="joint" objname="abdomen_z" />
+
+    <!-- <plugin plugin="mujoco.multiverse_connector" instance="client_2" objtype="body" objname="torso" />
+    <plugin plugin="mujoco.multiverse_connector" instance="client_2" objtype="body" objname="lower_waist" /> -->
+  </sensor>
+
+  <include file="hammock.xml"/>
+</mujoco>
