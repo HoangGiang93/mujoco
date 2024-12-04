@@ -70,53 +70,108 @@ Json::Value string_to_json(std::string &str)
   }
 }
 
+bool is_attribute_valid(const std::string &attr, const int obj_type, int &attr_size)
+{
+  attr_size = 0;
+  switch (obj_type)
+  {
+  case mjOBJ_BODY:
+  {
+    if (strcmp(attr.c_str(), "position") == 0)
+    {
+      attr_size = 3;
+      return true;
+    }
+    else if (strcmp(attr.c_str(), "quaternion") == 0)
+    {
+      attr_size = 4;
+      return true;
+    }
+    else if (strcmp(attr.c_str(), "relative_velocity") == 0)
+    {
+      attr_size = 6;
+      return true;
+    }
+    else if (strcmp(attr.c_str(), "force") == 0)
+    {
+      attr_size = 3;
+      return true;
+    }
+    else if (strcmp(attr.c_str(), "torque") == 0)
+    {
+      attr_size = 3;
+      return true;
+    }
+    return false;
+  }
+  case mjOBJ_JOINT:
+  {
+    const std::set<const char *> joint_attributes = {"joint_rvalue", "joint_tvalue", "joint_angular_velocity", "joint_linear_velocity", "joint_torque", "joint_force"};
+    if (std::find(joint_attributes.begin(), joint_attributes.end(), attr) != joint_attributes.end())
+    {
+      attr_size = 1;
+      return true;
+    }
+    return false;
+  }
+  case mjOBJ_ACTUATOR:
+  {
+    const std::set<const char *> actuator_attributes = {"cmd_joint_rvalue", "cmd_joint_tvalue", "cmd_joint_angular_velocity", "cmd_joint_linear_velocity", "cmd_joint_torque", "cmd_joint_force"};
+    if (std::find(actuator_attributes.begin(), actuator_attributes.end(), attr) != actuator_attributes.end())
+    {
+      attr_size = 1;
+      return true;
+    }
+    return false;
+  }
+  default:
+    mju_warning("Object type %d is not supported\n", obj_type);
+    return false;
+  }
+}
+
 namespace mujoco::plugin::multiverse_connector
 {
-  namespace
+  constexpr char server_host[] = "server_host";
+  constexpr char server_port[] = "server_port";
+  constexpr char client_port[] = "client_port";
+  constexpr char world_name[] = "world_name";
+  constexpr char simulation_name[] = "simulation_name";
+  constexpr char send[] = "send";
+
+  std::string GetStringAttr(const mjModel *m, int instance, const char *attr, const std::string &default_value = "")
   {
+    const char *value = mj_getPluginConfig(m, instance, attr);
+    return (value != nullptr && value[0] != '\0') ? value : default_value;
+  }
 
-    constexpr char server_host[] = "server_host";
-    constexpr char server_port[] = "server_port";
-    constexpr char client_port[] = "client_port";
-    constexpr char world_name[] = "world_name";
-    constexpr char simulation_name[] = "simulation_name";
-    constexpr char send[] = "send";
+  // returns the next act given the current act_dot, after clamping, for native
+  // mujoco dyntypes.
+  // copied from engine_forward.
+  // mjtNum NextActivation(const mjModel* m, const mjData* d, int actuator_id,
+  //                       int act_adr, mjtNum act_dot) {
+  //   mjtNum act = d_->act[act_adr];
 
-    std::string GetStringAttr(const mjModel *m, int instance, const char *attr, const std::string &default_value = "")
-    {
-      const char *value = mj_getPluginConfig(m, instance, attr);
-      return (value != nullptr && value[0] != '\0') ? value : default_value;
-    }
+  //   if (m_->actuator_dyntype[actuator_id] == mjDYN_FILTEREXACT) {
+  //     // exact filter integration
+  //     // act_dot(0) = (ctrl-act(0)) / tau
+  //     // act(h) = act(0) + (ctrl-act(0)) (1 - exp(-h / tau))
+  //     //        = act(0) + act_dot(0) * tau * (1 - exp(-h / tau))
+  //     mjtNum tau = mju_max(mjMINVAL, m_->actuator_dynprm[actuator_id * mjNDYN]);
+  //     act = act + act_dot * tau * (1 - mju_exp(-m_->opt.timestep / tau));
+  //   } else {
+  //     // Euler integration
+  //     act = act + act_dot * m_->opt.timestep;
+  //   }
 
-    // returns the next act given the current act_dot, after clamping, for native
-    // mujoco dyntypes.
-    // copied from engine_forward.
-    // mjtNum NextActivation(const mjModel* m, const mjData* d, int actuator_id,
-    //                       int act_adr, mjtNum act_dot) {
-    //   mjtNum act = d_->act[act_adr];
+  //   // clamp to actrange
+  //   if (m_->actuator_actlimited[actuator_id]) {
+  //     mjtNum* actrange = m_->actuator_actrange + 2 * actuator_id;
+  //     act = mju_clip(act, actrange[0], actrange[1]);
+  //   }
 
-    //   if (m_->actuator_dyntype[actuator_id] == mjDYN_FILTEREXACT) {
-    //     // exact filter integration
-    //     // act_dot(0) = (ctrl-act(0)) / tau
-    //     // act(h) = act(0) + (ctrl-act(0)) (1 - exp(-h / tau))
-    //     //        = act(0) + act_dot(0) * tau * (1 - exp(-h / tau))
-    //     mjtNum tau = mju_max(mjMINVAL, m_->actuator_dynprm[actuator_id * mjNDYN]);
-    //     act = act + act_dot * tau * (1 - mju_exp(-m_->opt.timestep / tau));
-    //   } else {
-    //     // Euler integration
-    //     act = act + act_dot * m_->opt.timestep;
-    //   }
-
-    //   // clamp to actrange
-    //   if (m_->actuator_actlimited[actuator_id]) {
-    //     mjtNum* actrange = m_->actuator_actrange + 2 * actuator_id;
-    //     act = mju_clip(act, actrange[0], actrange[1]);
-    //   }
-
-    //   return act;
-    // }
-
-  } // namespace
+  //   return act;
+  // }
 
   MultiverseConnector *MultiverseConnector::Create(const mjModel *m, mjData *d, int instance)
   {
@@ -142,27 +197,22 @@ namespace mujoco::plugin::multiverse_connector
     {
       for (const int sensor_id : sensor_ids)
       {
-        if (m->sensor_objtype[sensor_id] == mjOBJ_BODY)
+        const int obj_type = m->sensor_objtype[sensor_id];
+        const int obj_id = m->sensor_objid[sensor_id];
+        const char *obj_name = mj_id2name(m, obj_type, obj_id);
+        if (!obj_name)
         {
-          const int body_id = m->sensor_objid[sensor_id];
-          const char *body_name = mj_id2name(m, mjtObj::mjOBJ_BODY, body_id);
-          if (!body_name)
+          mju_warning("Object id %d of type %d must have a name\n", obj_id, obj_type);
+          continue;
+        }
+        config.send_objects[obj_name] = {};
+        for (const Json::Value &attribute_json : send_json[obj_name])
+        {
+          const std::string attribute_name = attribute_json.asString();
+          int attr_size = 0;
+          if (is_attribute_valid(attribute_name, obj_type, attr_size))
           {
-            mju_warning_i("Body id %d must have a name\n", body_id);
-          }
-          else
-          {
-            config.send_objects[body_name] = {};
-
-            for (const Json::Value &attribute_json : send_json[body_name])
-            {
-              const std::string attribute_name = attribute_json.asString();
-              if (strcmp(attribute_name.c_str(), "position") == 0 ||
-                  strcmp(attribute_name.c_str(), "quaternion") == 0)
-              {
-                config.send_objects[body_name].insert(attribute_name);
-              }
-            }
+            config.send_objects[obj_name].insert(attribute_name);
           }
         }
       }
@@ -351,50 +401,35 @@ namespace mujoco::plugin::multiverse_connector
         mju_warning("Send list is empty\n");
         return 0;
       }
-      if (m->sensor_objtype[sensor_id] == mjOBJ_UNKNOWN)
-      {
-        return 10;
-      }
-      else if (m->sensor_objtype[sensor_id] == mjOBJ_BODY)
-      {
-        const int body_id = m->sensor_objid[sensor_id];
-        const char *body_name = mj_id2name(m, mjtObj::mjOBJ_BODY, body_id);
-        if (!body_name)
-        {
-          mju_warning_i("Body id %d must have a name\n", body_id);
-          return 0;
-        }
-        if (!send_json.isMember(body_name))
-        {
-          mju_warning_s("Body %s is not in the send list\n", body_name);
-          return 0;
-        }
 
-        if (send_json[body_name].empty())
-        {
-          mju_warning_s("Body %s has no attributes in the send list\n", body_name);
-          return 0;
-        }
-        int nsensordata = 0;
-        for (const Json::Value &attribute_json : send_json[body_name])
-        {
-          const std::string attribute_name = attribute_json.asString();
-          if (strcmp(attribute_name.c_str(), "position") == 0)
-          {
-            nsensordata += 3;
-          }
-          else if (strcmp(attribute_name.c_str(), "quaternion") == 0)
-          {
-            nsensordata += 4;
-          }
-        }
-        return nsensordata;
-      }
-      else
+      const int obj_type = m->sensor_objtype[sensor_id];
+      if (obj_type == mjOBJ_UNKNOWN)
       {
-        mju_warning("Sensor object type %d is not supported\n", m->sensor_objtype[sensor_id]);
+        return 10; // Special case for unknown object type
+      }
+      const int obj_id = m->sensor_objid[sensor_id];
+      const char *obj_name = mj_id2name(m, obj_type, obj_id);
+      if (!obj_name)
+      {
+        mju_warning("Object id %d of type %d must have a name\n", obj_id, obj_type);
         return 0;
       }
+      if (!send_json.isMember(obj_name))
+      {
+        mju_warning_s("Object %s is not in the send list\n", obj_name);
+        return 0;
+      }
+      int nsensordata = 0;
+      for (const Json::Value &attribute_json : send_json[obj_name])
+      {
+        const std::string attribute_name = attribute_json.asString();
+        int attr_size = 0;
+        if (is_attribute_valid(attribute_name, obj_type, attr_size))
+        {
+          nsensordata += attr_size;
+        }
+      }
+      return nsensordata;
     };
 
     plugin.init = +[](const mjModel *m, mjData *d, int instance)
@@ -450,9 +485,7 @@ namespace mujoco::plugin::multiverse_connector
 
   void MultiverseConnector::start_connect_to_server_thread()
   {
-    printf("Start connect_to_server thread\n");
     connect_to_server();
-    printf("End connect_to_server thread\n");
   }
 
   void MultiverseConnector::wait_for_connect_to_server_thread_finish()
@@ -461,9 +494,7 @@ namespace mujoco::plugin::multiverse_connector
 
   void MultiverseConnector::start_meta_data_thread()
   {
-    printf("Start send_and_receive_meta_data thread\n");
     send_and_receive_meta_data();
-    printf("End send_and_receive_meta_data thread\n");
   }
 
   void MultiverseConnector::wait_for_meta_data_thread_finish()
@@ -472,7 +503,6 @@ namespace mujoco::plugin::multiverse_connector
 
   bool MultiverseConnector::init_objects(bool from_request_meta_data)
   {
-    printf("Init objects\n");
     if (from_request_meta_data)
     {
       if (request_meta_data_json["receive"].empty())
@@ -513,7 +543,6 @@ namespace mujoco::plugin::multiverse_connector
       bool stop = !send_object.second.empty(); // Skip if object has no attributes
       for (const std::string &attribute_name : send_object.second)
       {
-        printf("Object name: %s Attribute name: %s\n", object_name.c_str(), attribute_name.c_str());
         if (strcmp(attribute_name.c_str(), "position") == 0 || strcmp(attribute_name.c_str(), "quaternion") == 0)
         {
           stop = false;
@@ -573,7 +602,6 @@ namespace mujoco::plugin::multiverse_connector
     //   receive_objects_json.removeMember(object_name);
     //   send_objects_json.removeMember(object_name);
     // }
-    printf("End Init objects\n");
     return true;
   }
 
@@ -605,28 +633,12 @@ namespace mujoco::plugin::multiverse_connector
       const int body_id = mj_name2id(m_, mjtObj::mjOBJ_BODY, send_object.first.c_str());
       const int joint_id = mj_name2id(m_, mjtObj::mjOBJ_JOINT, send_object.first.c_str());
       const int actuator_id = mj_name2id(m_, mjtObj::mjOBJ_ACTUATOR, send_object.first.c_str());
-      if (body_id != -1)
+      if (body_id != -1 || joint_id != -1 || actuator_id != -1)
       {
-        const std::string body_name = send_object.first;
+        const std::string object_name = send_object.first;
         for (const std::string &attribute_name : send_object.second)
         {
-          request_meta_data_json["send"][body_name].append(attribute_name);
-        }
-      }
-      if (joint_id != -1)
-      {
-        const std::string joint_name = send_object.first;
-        for (const std::string &attribute_name : send_object.second)
-        {
-          request_meta_data_json["send"][joint_name].append(attribute_name);
-        }
-      }
-      if (actuator_id != -1)
-      {
-        const std::string actuator_name = send_object.first;
-        for (const std::string &attribute_name : send_object.second)
-        {
-          request_meta_data_json["send"][actuator_name].append(attribute_name);
+          request_meta_data_json["send"][object_name].append(attribute_name);
         }
       }
     }
@@ -636,28 +648,12 @@ namespace mujoco::plugin::multiverse_connector
       const int body_id = mj_name2id(m_, mjtObj::mjOBJ_BODY, receive_object.first.c_str());
       const int joint_id = mj_name2id(m_, mjtObj::mjOBJ_JOINT, receive_object.first.c_str());
       const int actuator_id = mj_name2id(m_, mjtObj::mjOBJ_ACTUATOR, receive_object.first.c_str());
-      if (body_id != -1)
+      if (body_id != -1 || joint_id != -1 || actuator_id != -1)
       {
-        const std::string body_name = receive_object.first;
+        const std::string object_name = receive_object.first;
         for (const std::string &attribute_name : receive_object.second)
         {
-          request_meta_data_json["receive"][body_name].append(attribute_name);
-        }
-      }
-      if (joint_id != -1)
-      {
-        const std::string joint_name = receive_object.first;
-        for (const std::string &attribute_name : receive_object.second)
-        {
-          request_meta_data_json["receive"][joint_name].append(attribute_name);
-        }
-      }
-      if (actuator_id != -1)
-      {
-        const std::string actuator_name = receive_object.first;
-        for (const std::string &attribute_name : receive_object.second)
-        {
-          request_meta_data_json["receive"][actuator_name].append(attribute_name);
+          request_meta_data_json["receive"][object_name].append(attribute_name);
         }
       }
     }
@@ -675,7 +671,10 @@ namespace mujoco::plugin::multiverse_connector
       const int actuator_id = mj_name2id(m_, mjtObj::mjOBJ_ACTUATOR, send_object.first.c_str());
       if (body_id != -1)
       {
-        if (mocap_id != -1)
+        const bool is_static = mocap_id != -1;
+        const bool is_free = m_->body_dofnum[body_id] == 6 && m_->body_jntadr[body_id] != -1 && m_->jnt_type[m_->body_jntadr[body_id]] == mjtJoint::mjJNT_FREE;
+        const bool is_hanging = m_->body_dofnum[body_id] == 3 && m_->body_jntadr[body_id] != -1 && m_->jnt_type[m_->body_jntadr[body_id]] == mjtJoint::mjJNT_BALL;
+        if (is_static)
         {
           for (const std::string &attribute_name : send_object.second)
           {
@@ -706,15 +705,9 @@ namespace mujoco::plugin::multiverse_connector
                 d_->mocap_quat[4 * mocap_id + 3] = z_json.asDouble();
               }
             }
-            else
-            {
-              mju_warning("Attribute %s not supported for body %s\n", attribute_name.c_str(), send_object.first.c_str());
-            }
           }
         }
-        else if (m_->body_dofnum[body_id] == 6 &&
-                 m_->body_jntadr[body_id] != -1 &&
-                 m_->jnt_type[m_->body_jntadr[body_id]] == mjtJoint::mjJNT_FREE)
+        else if (is_free)
         {
           mjtNum *xpos_desired = d_->xpos + 3 * body_id;
           mjtNum *xquat_desired = d_->xquat + 4 * body_id;
@@ -767,10 +760,6 @@ namespace mujoco::plugin::multiverse_connector
                 d_->qvel[qvel_adr + 5] = qvel_ang_z.asDouble();
               }
             }
-            else
-            {
-              mju_warning("Attribute %s not supported for body %s\n", attribute_name.c_str(), send_object.first.c_str());
-            }
           }
 
           const int qpos_adr = m_->jnt_qposadr[m_->body_jntadr[body_id]];
@@ -782,7 +771,7 @@ namespace mujoco::plugin::multiverse_connector
           d_->qpos[qpos_adr + 5] = xquat_desired[2];
           d_->qpos[qpos_adr + 6] = xquat_desired[3];
         }
-        else if (m_->body_dofnum[body_id] == 3 && m_->body_jntadr[body_id] != -1 && m_->jnt_type[m_->body_jntadr[body_id]] == mjtJoint::mjJNT_BALL)
+        else if (is_hanging)
         {
           for (const std::string &attribute_name : send_object.second)
           {
@@ -804,20 +793,50 @@ namespace mujoco::plugin::multiverse_connector
                 mju_mulQuat(d_->qpos + qpos_id, xquat_current_neg, xquat_desired);
               }
             }
-            else
+          }
+        }
+        if (!is_static)
+        {
+          for (const std::string &attribute_name : send_object.second)
+          {
+            const Json::Value attribute_data = response_meta_data_json["send"][send_object.first][attribute_name];
+            if (strcmp(attribute_name.c_str(), "force") == 0)
             {
-              mju_warning("Attribute %s not supported for body %s\n", attribute_name.c_str(), send_object.first.c_str());
+              const Json::Value x_json = attribute_data[0];
+              const Json::Value y_json = attribute_data[1];
+              const Json::Value z_json = attribute_data[2];
+              if (!x_json.isNull() && !y_json.isNull() && !z_json.isNull())
+              {
+                d_->xfrc_applied[6 * body_id] = x_json.asDouble();
+                d_->xfrc_applied[6 * body_id + 1] = y_json.asDouble();
+                d_->xfrc_applied[6 * body_id + 2] = z_json.asDouble();
+              }
+            }
+            else if (strcmp(attribute_name.c_str(), "torque") == 0)
+            {
+              const Json::Value x_json = attribute_data[0];
+              const Json::Value y_json = attribute_data[1];
+              const Json::Value z_json = attribute_data[2];
+              if (!x_json.isNull() && !y_json.isNull() && !z_json.isNull())
+              {
+                d_->xfrc_applied[6 * body_id + 3] = x_json.asDouble();
+                d_->xfrc_applied[6 * body_id + 4] = y_json.asDouble();
+                d_->xfrc_applied[6 * body_id + 5] = z_json.asDouble();
+              }
             }
           }
         }
       }
       if (joint_id != -1)
       {
+        const bool is_revolute_joint = m_->jnt_type[joint_id] == mjtJoint::mjJNT_HINGE;
+        const bool is_prismatic_joint = m_->jnt_type[joint_id] == mjtJoint::mjJNT_SLIDE;
+        const bool is_ball_joint = m_->jnt_type[joint_id] == mjtJoint::mjJNT_BALL;
         for (const std::string &attribute_name : send_object.second)
         {
           const Json::Value attribute_data = response_meta_data_json["send"][send_object.first][attribute_name];
-          if ((strcmp(attribute_name.c_str(), "joint_rvalue") == 0 && m_->jnt_type[joint_id] == mjtJoint::mjJNT_HINGE) ||
-              (strcmp(attribute_name.c_str(), "joint_tvalue") == 0 && m_->jnt_type[joint_id] == mjtJoint::mjJNT_SLIDE))
+          if ((strcmp(attribute_name.c_str(), "joint_rvalue") == 0 && is_revolute_joint) ||
+              (strcmp(attribute_name.c_str(), "joint_tvalue") == 0 && is_prismatic_joint))
           {
             const Json::Value v_json = attribute_data[0];
             if (!v_json.isNull())
@@ -826,8 +845,8 @@ namespace mujoco::plugin::multiverse_connector
               d_->qpos[qpos_id] = v_json.asDouble();
             }
           }
-          else if ((strcmp(attribute_name.c_str(), "joint_angular_velocity") == 0 && m_->jnt_type[joint_id] == mjtJoint::mjJNT_HINGE) ||
-                   (strcmp(attribute_name.c_str(), "joint_linear_velocity") == 0 && m_->jnt_type[joint_id] == mjtJoint::mjJNT_SLIDE))
+          else if ((strcmp(attribute_name.c_str(), "joint_angular_velocity") == 0 && is_revolute_joint) ||
+                   (strcmp(attribute_name.c_str(), "joint_linear_velocity") == 0 && is_prismatic_joint))
           {
             const Json::Value v_json = attribute_data[0];
             if (!v_json.isNull())
@@ -836,7 +855,17 @@ namespace mujoco::plugin::multiverse_connector
               d_->qvel[dof_id] = v_json.asDouble();
             }
           }
-          else if ((strcmp(attribute_name.c_str(), "joint_quaternion") == 0 && m_->jnt_type[joint_id] == mjtJoint::mjJNT_BALL))
+          else if ((strcmp(attribute_name.c_str(), "joint_torque") == 0 && is_revolute_joint) ||
+                   (strcmp(attribute_name.c_str(), "joint_force") == 0 && is_prismatic_joint))
+          {
+            const Json::Value v_json = attribute_data[0];
+            if (!v_json.isNull())
+            {
+              const int dof_id = m_->jnt_dofadr[joint_id];
+              d_->qfrc_applied[dof_id] = v_json.asDouble();
+            }
+          }
+          else if ((strcmp(attribute_name.c_str(), "joint_quaternion") == 0 && is_ball_joint))
           {
             const Json::Value w_json = attribute_data[0];
             const Json::Value x_json = attribute_data[1];
@@ -852,10 +881,6 @@ namespace mujoco::plugin::multiverse_connector
               d_->qpos[qpos_adr + 3] = z_json.asDouble();
             }
           }
-          else
-          {
-            mju_warning("Attribute %s not supported for joint %s\n", attribute_name.c_str(), send_object.first.c_str());
-          }
         }
       }
       if (actuator_id != -1)
@@ -870,10 +895,6 @@ namespace mujoco::plugin::multiverse_connector
               strcmp(attribute_name.c_str(), "cmd_joint_force") == 0)
           {
             d_->ctrl[actuator_id] = response_meta_data_json["send"][send_object.first][attribute_name][0].asDouble();
-          }
-          else
-          {
-            mju_warning("Attribute %s not supported for actuator %s\n", attribute_name.c_str(), send_object.first.c_str());
           }
         }
       }
@@ -935,11 +956,13 @@ namespace mujoco::plugin::multiverse_connector
 
   void MultiverseConnector::clean_up()
   {
-    // TODO: Find a clean way to clear the data because it's unsure if the data is still in use.
+    send_data_pairs.clear();
 
-    // send_data.clear();
-
-    // receive_data.clear();
+    for (std::pair<const int, mjtNum *> &contact_effort : contact_efforts)
+    {
+      free(contact_effort.second);
+    }
+    contact_efforts.clear();
   }
 
   void MultiverseConnector::reset()
@@ -953,12 +976,11 @@ namespace mujoco::plugin::multiverse_connector
     {
       const int body_id = mj_name2id(m_, mjtObj::mjOBJ_BODY, send_object.first.c_str());
       const int mocap_id = m_->body_mocapid[body_id];
-      // const int joint_id = mj_name2id(m_, mjtObj::mjOBJ_JOINT, send_object.first.c_str());
+      const int joint_id = mj_name2id(m_, mjtObj::mjOBJ_JOINT, send_object.first.c_str());
       if (body_id != -1)
       {
         const std::string body_name = send_object.first;
         int sensor_id = get_sensor_id(m_, mjOBJ_BODY, body_id);
-        printf("Body name: %s Sensor id: %d\n", body_name.c_str(), sensor_id);
         if (sensor_id == -1)
         {
           mju_warning("Sensor id for body %s not found\n", body_name.c_str());
@@ -990,7 +1012,8 @@ namespace mujoco::plugin::multiverse_connector
         }
         else
         {
-          // const int dof_id = m_->body_dofadr[body_id];
+          const int dof_id = m_->body_dofadr[body_id];
+          const bool is_free = m_->body_dofnum[body_id] == 6 && m_->body_jntadr[body_id] != -1 && m_->jnt_type[m_->body_jntadr[body_id]] == mjtJoint::mjJNT_FREE;
           for (const std::string &attribute_name : send_object.second)
           {
             if (strcmp(attribute_name.c_str(), "position") == 0)
@@ -1006,46 +1029,37 @@ namespace mujoco::plugin::multiverse_connector
               send_data_pairs.emplace_back(sensor_adr++, &d_->xquat[4 * body_id + 2]);
               send_data_pairs.emplace_back(sensor_adr++, &d_->xquat[4 * body_id + 3]);
             }
-            // else if (strcmp(attribute_name.c_str(), "force") == 0 &&
-            //          m->body_dofnum[body_id] == 6 &&
-            //          m->body_jntadr[body_id] != -1 &&
-            //          m->jnt_type[m->body_jntadr[body_id]] == mjtJoint::mjJNT_FREE)
-            // {
-            //   if (contact_efforts.count(body_id) == 0)
-            //   {
-            //     contact_efforts[body_id] = (mjtNum *)calloc(6, sizeof(mjtNum));
-            //   }
+            else if (strcmp(attribute_name.c_str(), "force") == 0 && is_free)
+            {
+              if (contact_efforts.count(body_id) == 0)
+              {
+                contact_efforts[body_id] = (mjtNum *)calloc(6, sizeof(mjtNum));
+              }
 
-            //   send_data_vec.emplace_back(&contact_efforts[body_id][0]);
-            //   send_data_vec.emplace_back(&contact_efforts[body_id][1]);
-            //   send_data_vec.emplace_back(&contact_efforts[body_id][2]);
-            // }
-            // else if (strcmp(attribute_name.c_str(), "torque") == 0 &&
-            //          m->body_dofnum[body_id] == 6 &&
-            //          m->body_jntadr[body_id] != -1 &&
-            //          m->jnt_type[m->body_jntadr[body_id]] == mjtJoint::mjJNT_FREE)
-            // {
-            //   if (contact_efforts.count(body_id) == 0)
-            //   {
-            //     contact_efforts[body_id] = (mjtNum *)calloc(6, sizeof(mjtNum));
-            //   }
+              send_data_pairs.emplace_back(sensor_adr++, &contact_efforts[body_id][0]);
+              send_data_pairs.emplace_back(sensor_adr++, &contact_efforts[body_id][1]);
+              send_data_pairs.emplace_back(sensor_adr++, &contact_efforts[body_id][2]);
+            }
+            else if (strcmp(attribute_name.c_str(), "torque") == 0 && is_free)
+            {
+              if (contact_efforts.count(body_id) == 0)
+              {
+                contact_efforts[body_id] = (mjtNum *)calloc(6, sizeof(mjtNum));
+              }
 
-            //   send_data_vec.emplace_back(&contact_efforts[body_id][3]);
-            //   send_data_vec.emplace_back(&contact_efforts[body_id][4]);
-            //   send_data_vec.emplace_back(&contact_efforts[body_id][5]);
-            // }
-            // else if (strcmp(attribute_name.c_str(), "relative_velocity") == 0 &&
-            //          m->body_dofnum[body_id] == 6 &&
-            //          m->body_jntadr[body_id] != -1 &&
-            //          m->jnt_type[m->body_jntadr[body_id]] == mjtJoint::mjJNT_FREE)
-            // {
-            //   send_data_vec.emplace_back(&d->qvel[dof_id]);
-            //   send_data_vec.emplace_back(&d->qvel[dof_id + 1]);
-            //   send_data_vec.emplace_back(&d->qvel[dof_id + 2]);
-            //   send_data_vec.emplace_back(&d->qvel[dof_id + 3]);
-            //   send_data_vec.emplace_back(&d->qvel[dof_id + 4]);
-            //   send_data_vec.emplace_back(&d->qvel[dof_id + 5]);
-            // }
+              send_data_pairs.emplace_back(sensor_adr++, &contact_efforts[body_id][3]);
+              send_data_pairs.emplace_back(sensor_adr++, &contact_efforts[body_id][4]);
+              send_data_pairs.emplace_back(sensor_adr++, &contact_efforts[body_id][5]);
+            }
+            else if (strcmp(attribute_name.c_str(), "relative_velocity") == 0 && is_free)
+            {
+              send_data_pairs.emplace_back(sensor_adr++, &d_->qvel[dof_id]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->qvel[dof_id + 1]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->qvel[dof_id + 2]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->qvel[dof_id + 3]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->qvel[dof_id + 4]);
+              send_data_pairs.emplace_back(sensor_adr++, &d_->qvel[dof_id + 5]);
+            }
             // else if (strcmp(attribute_name.c_str(), "odometric_velocity") == 0 &&
             //          m->body_dofnum[body_id] <= 6 &&
             //          m->body_jntadr[body_id] != -1)
@@ -1058,59 +1072,58 @@ namespace mujoco::plugin::multiverse_connector
             //   send_data_vec.emplace_back(&odom_velocities[body_id][4]);
             //   send_data_vec.emplace_back(&odom_velocities[body_id][5]);
             // }
-            else
-            {
-              printf("Send %s for %s not supported\n", attribute_name.c_str(), body_name.c_str());
-            }
           }
         }
       }
-      // else if (joint_id != -1)
-      // {
-      //   const std::string joint_name = send_object.first;
-      //   const int qpos_id = m->jnt_qposadr[joint_id];
-      //   const int dof_id = m->jnt_dofadr[joint_id];
-      //   for (const std::string &attribute_name : send_object.second)
-      //   {
-      //     if ((strcmp(attribute_name.c_str(), "joint_rvalue") == 0 &&
-      //          m->jnt_type[joint_id] == mjtJoint::mjJNT_HINGE) ||
-      //         (strcmp(attribute_name.c_str(), "joint_tvalue") == 0 &&
-      //          m->jnt_type[joint_id] == mjtJoint::mjJNT_SLIDE))
-      //     {
-      //       send_data_vec.emplace_back(&d->qpos[qpos_id]);
-      //     }
-      //     else if ((strcmp(attribute_name.c_str(), "joint_angular_velocity") == 0 &&
-      //               m->jnt_type[joint_id] == mjtJoint::mjJNT_HINGE) ||
-      //              (strcmp(attribute_name.c_str(), "joint_linear_velocity") == 0 &&
-      //               m->jnt_type[joint_id] == mjtJoint::mjJNT_SLIDE))
-      //     {
-      //       send_data_vec.emplace_back(&d->qvel[dof_id]);
-      //     }
-      //     else if ((strcmp(attribute_name.c_str(), "joint_torque") == 0 &&
-      //               m->jnt_type[joint_id] == mjtJoint::mjJNT_HINGE) ||
-      //              (strcmp(attribute_name.c_str(), "joint_force") == 0 &&
-      //               m->jnt_type[joint_id] == mjtJoint::mjJNT_SLIDE))
-      //     {
-      //       send_data_vec.emplace_back(&d->qfrc_inverse[dof_id]);
-      //     }
-      //     else if (strcmp(attribute_name.c_str(), "joint_position") == 0)
-      //     {
-      //       printf("Send %s for %s not supported yet\n", attribute_name.c_str(), joint_name.c_str());
-      //     }
-      //     else if (strcmp(attribute_name.c_str(), "joint_quaternion") == 0 &&
-      //              m->jnt_type[joint_id] == mjtJoint::mjJNT_BALL)
-      //     {
-      //       send_data_vec.emplace_back(&d->qpos[qpos_id]);
-      //       send_data_vec.emplace_back(&d->qpos[qpos_id + 1]);
-      //       send_data_vec.emplace_back(&d->qpos[qpos_id + 2]);
-      //       send_data_vec.emplace_back(&d->qpos[qpos_id + 3]);
-      //     }
-      //     else
-      //     {
-      //       printf("Send %s for %s not supported\n", attribute_name.c_str(), joint_name.c_str());
-      //     }
-      //   }
-      // }
+      else if (joint_id != -1)
+      {
+        const std::string joint_name = send_object.first;
+        const int qpos_id = m_->jnt_qposadr[joint_id];
+        const int dof_id = m_->jnt_dofadr[joint_id];
+        int sensor_id = get_sensor_id(m_, mjOBJ_JOINT, joint_id);
+        if (sensor_id == -1)
+        {
+          mju_warning("Sensor id for joint %s not found\n", joint_name.c_str());
+          continue;
+        }
+        int sensor_adr = m_->sensor_adr[sensor_id];
+        for (const std::string &attribute_name : send_object.second)
+        {
+          const bool is_revolute_joint = m_->jnt_type[joint_id] == mjtJoint::mjJNT_HINGE;
+          const bool is_prismatic_joint = m_->jnt_type[joint_id] == mjtJoint::mjJNT_SLIDE;
+          const bool is_ball_joint = m_->jnt_type[joint_id] == mjtJoint::mjJNT_BALL;
+          if ((strcmp(attribute_name.c_str(), "joint_rvalue") == 0 && is_revolute_joint) ||
+              (strcmp(attribute_name.c_str(), "joint_tvalue") == 0 && is_prismatic_joint))
+          {
+            send_data_pairs.emplace_back(sensor_adr++, &d_->qpos[qpos_id]);
+          }
+          else if ((strcmp(attribute_name.c_str(), "joint_angular_velocity") == 0 && is_revolute_joint) ||
+                   (strcmp(attribute_name.c_str(), "joint_linear_velocity") == 0 && is_prismatic_joint))
+          {
+            send_data_pairs.emplace_back(sensor_adr++, &d_->qvel[dof_id]);
+          }
+          else if ((strcmp(attribute_name.c_str(), "joint_torque") == 0 && is_revolute_joint) ||
+                   (strcmp(attribute_name.c_str(), "joint_force") == 0 && is_prismatic_joint))
+          {
+            send_data_pairs.emplace_back(sensor_adr++, &d_->qfrc_inverse[dof_id]);
+          }
+          else if (strcmp(attribute_name.c_str(), "joint_position") == 0)
+          {
+            mju_warning("Send %s for %s not supported yet\n", attribute_name.c_str(), joint_name.c_str());
+          }
+          else if (strcmp(attribute_name.c_str(), "joint_quaternion") == 0 && is_prismatic_joint && is_ball_joint)
+          {
+            send_data_pairs.emplace_back(sensor_adr++, &d_->qpos[qpos_id]);
+            send_data_pairs.emplace_back(sensor_adr++, &d_->qpos[qpos_id + 1]);
+            send_data_pairs.emplace_back(sensor_adr++, &d_->qpos[qpos_id + 2]);
+            send_data_pairs.emplace_back(sensor_adr++, &d_->qpos[qpos_id + 3]);
+          }
+          else
+          {
+            mju_warning("Send %s for %s not supported\n", attribute_name.c_str(), joint_name.c_str());
+          }
+        }
+      }
     }
 
     // for (const std::pair<std::string, std::set<std::string>> &receive_object : receive_objects)
@@ -1270,17 +1283,32 @@ namespace mujoco::plugin::multiverse_connector
   void MultiverseConnector::bind_send_data()
   {
     *world_time = d_->time;
-    for (const std::pair<int, double*>& send_data_pair : send_data_pairs)
+    if (send_data_pairs.size() != send_buffer.buffer_double.size)
     {
-      const int sensor_id = send_data_pair.first;
-      const double *data = send_data_pair.second;
+      mju_warning("Mismatch between send_data_pairs [%zd] and send_buffer.buffer_double.size [%zd]\n", send_data_pairs.size(), send_buffer.buffer_double.size);
+      return;
+    }
+
+    mj_markStack(d_);
+    for (std::pair<const int, mjtNum *> &contact_effort : contact_efforts)
+    {
+      mjtNum *jac = mj_stackAllocNum(d_, 6 * m_->nv);
+      mj_jacBodyCom(m_, d_, jac, jac + 3 * m_->nv, contact_effort.first);
+      mju_mulMatVec(contact_effort.second, jac, d_->qfrc_constraint, 6, m_->nv);
+    }
+    mj_freeStack(d_);
+
+    for (size_t i = 0; i < send_buffer.buffer_double.size; i++)
+    {
+      const int sensor_id = send_data_pairs[i].first;
+      const double *data = send_data_pairs[i].second;
       d_->sensordata[sensor_id] = *data;
+      send_buffer.buffer_double.data[i] = *data;
     }
   }
 
   void MultiverseConnector::bind_receive_data()
   {
-    
   }
 
 } // namespace mujoco::plugin::multiverse_connector

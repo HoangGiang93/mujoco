@@ -1,0 +1,20 @@
+<mujoco model="MultiverseConnectorTest">
+  <extension>
+    <plugin plugin="mujoco.multiverse_connector">
+      <instance name="mujoco_client">
+        <config key="server_host" value="tcp://127.0.0.1"/>
+        <config key="server_port" value="7000"/>
+        <config key="client_port" value="7500"/>
+        <config key="world_name" value="world"/>
+        <config key="simulation_name" value="mujoco_sim"/>
+        <config key="send" value="{'world': ['position', 'quaternion']}" />
+      </instance>
+    </plugin>
+  </extension>
+
+  <sensor>
+    <plugin plugin="mujoco.multiverse_connector" instance="mujoco_client" objtype="body" objname="world" />
+  </sensor>
+
+  <worldbody/>
+</mujoco>

@@ -1,12 +1,4 @@
 <mujoco model="MultiverseConnector">
-  <size memory="10M"/>
-
-  <visual>
-    <headlight diffuse=".2 .2 .2"/>
-    <global elevation="-30" />
-  </visual>
-  <statistic extent="0.50" />
-
   <extension>
     <plugin plugin="mujoco.multiverse_connector">
       <instance name="client_1">
@@ -15,7 +7,7 @@
         <config key="client_port" value="7501"/>
         <config key="world_name" value="world"/>
         <config key="simulation_name" value="sim_1"/>
-        <config key="send" value="{'b1': ['position', 'quaternion'], 'b2': ['position']}" />
+        <config key="send" value="{'torso': ['position', 'quaternion', 'relative_velocity', 'force', 'torque'], 'lower_waist': ['position'], 'abdomen_z': ['joint_rvalue', 'joint_angular_velocity', 'joint_torque']}" />
       </instance>
 
       <!-- <instance name="client_2">
@@ -24,42 +16,19 @@
         <config key="client_port" value="7502"/>
         <config key="world_name" value="world"/>
         <config key="simulation_name" value="sim_2"/>
-        <config key="send" value="{'b1': ['position', 'quaternion'], 'b2': ['quaternion']}" />
+        <config key="send" value="{'torso': ['position', 'quaternion'], 'lower_waist': ['quaternion']}" />
       </instance> -->
     </plugin>
   </extension>
 
   <sensor>
-    <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="body" objname="b1" />
-    <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="body" objname="b2" />
+    <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="body" objname="torso" />
+    <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="body" objname="lower_waist" />
+    <plugin plugin="mujoco.multiverse_connector" instance="client_1" objtype="joint" objname="abdomen_z" />
 
-    <!-- <plugin plugin="mujoco.multiverse_connector" instance="client_2" objtype="body" objname="b1" />
-    <plugin plugin="mujoco.multiverse_connector" instance="client_2" objtype="body" objname="b2" /> -->
+    <!-- <plugin plugin="mujoco.multiverse_connector" instance="client_2" objtype="body" objname="torso" />
+    <plugin plugin="mujoco.multiverse_connector" instance="client_2" objtype="body" objname="lower_waist" /> -->
   </sensor>
 
-  <default>
-    <geom type="sphere" size="0.01" rgba="1 1 1 1" />
-  </default>
-
-  <worldbody>
-    <light pos="0.4 -.15 .6" dir="-1 .5 -1" diffuse=".7 .7 .7"/>
-    <light pos="-.4 -.15 .6" dir="1 .5 -1" diffuse=".7 .7 .7"/>
-    <geom name="floor" type="plane" pos="0 0 -0.1" size="0 0 100" />
-    <body name="b1" pos="-0.06 0 0">
-      <joint name="j1" type="slide" axis="0 0 1" />
-      <geom/>
-    </body>
-    <body name="b2" pos="-0.02 0 0" >
-      <joint name="j2" type="slide" axis="0 0 1" />
-      <geom/>
-    </body>
-    <body pos="0.02 0 0" >
-      <joint name="j3" type="slide" axis="0 0 1" />
-      <geom/>
-    </body>
-    <body pos="0.06 0 0" >
-      <joint name="j4" type="slide" axis="0 0 1" />
-      <geom/>
-    </body>
-  </worldbody>
+  <include file="hammock.xml"/>
 </mujoco>

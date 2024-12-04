@@ -98,6 +98,8 @@ namespace mujoco::plugin::multiverse_connector
 
     std::vector<std::pair<int, mjtNum*>> send_data_pairs;
 
+    std::map<int, mjtNum *> contact_efforts;
+
   private:
     void start_connect_to_server_thread() override;
 
