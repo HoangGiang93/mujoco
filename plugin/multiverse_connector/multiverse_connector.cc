@@ -283,13 +283,13 @@ void calculate_odom_velocities(std::map<int, mjtNum *> &odom_velocities, const m
 
 namespace mujoco::plugin::multiverse_connector
 {
-  constexpr char server_host[] = "server_host";
-  constexpr char server_port[] = "server_port";
-  constexpr char client_port[] = "client_port";
-  constexpr char world_name[] = "world_name";
-  constexpr char simulation_name[] = "simulation_name";
-  constexpr char send[] = "send";
-  constexpr char receive[] = "receive";
+  constexpr char host_str[] = "server_host";
+  constexpr char server_port_str[] = "server_port";
+  constexpr char client_port_str[] = "client_port";
+  constexpr char world_name_str[] = "world_name";
+  constexpr char simulation_name_str[] = "simulation_name";
+  constexpr char send_str[] = "send";
+  constexpr char receive_str[] = "receive";
 
   std::string GetStringAttr(const mjModel *m, int instance, const char *attr, const std::string &default_value = "")
   {
@@ -300,17 +300,17 @@ namespace mujoco::plugin::multiverse_connector
   MultiverseConnector *MultiverseConnector::Create(const mjModel *m, mjData *d, int instance)
   {
     MultiverseConfig config;
-    config.server_host = GetStringAttr(m, instance, server_host, config.server_host);
-    config.server_port = GetStringAttr(m, instance, server_port, config.server_port);
-    config.client_port = GetStringAttr(m, instance, client_port, config.client_port);
-    config.world_name = GetStringAttr(m, instance, world_name, config.world_name);
-    config.simulation_name = GetStringAttr(m, instance, simulation_name, config.simulation_name);
+    config.host = GetStringAttr(m, instance, host_str, config.host);
+    config.server_port = GetStringAttr(m, instance, server_port_str, config.server_port);
+    config.client_port = GetStringAttr(m, instance, client_port_str, config.client_port);
+    config.world_name = GetStringAttr(m, instance, world_name_str, config.world_name);
+    config.simulation_name = GetStringAttr(m, instance, simulation_name_str, config.simulation_name);
 
     Json::Reader reader;
 
-    std::string send_str = GetStringAttr(m, instance, send);
-    boost::replace_all(send_str, "'", "\"");
-    Json::Value send_json = string_to_json(send_str);
+    std::string send_json_str = GetStringAttr(m, instance, send_str);
+    boost::replace_all(send_json_str, "'", "\"");
+    Json::Value send_json = string_to_json(send_json_str);
     const std::map<std::string, std::pair<int, int>> obj_type_map = 
     {
       {"body", {mjOBJ_BODY, m->nbody}},
@@ -363,9 +363,9 @@ namespace mujoco::plugin::multiverse_connector
       }
     }
 
-    std::string receive_str = GetStringAttr(m, instance, receive);
-    boost::replace_all(receive_str, "'", "\"");
-    Json::Value receive_json = string_to_json(receive_str);
+    std::string receive_json_str = GetStringAttr(m, instance, receive_str);
+    boost::replace_all(receive_json_str, "'", "\"");
+    Json::Value receive_json = string_to_json(receive_json_str);
     for (const std::string &object_name : receive_json.getMemberNames())
     {
       config.receive_objects[object_name] = {};
@@ -411,7 +411,7 @@ namespace mujoco::plugin::multiverse_connector
     plugin.name = "mujoco.multiverse_connector";
     plugin.capabilityflags |= mjPLUGIN_PASSIVE;
 
-    std::vector<const char *> attributes = {server_host, server_port, client_port, world_name, simulation_name, send, receive};
+    std::vector<const char *> attributes = {host_str, server_port_str, client_port_str, world_name_str, simulation_name_str, send_str, receive_str};
     plugin.nattribute = attributes.size();
     plugin.attributes = attributes.data();
     plugin.nstate = MultiverseConnector::StateSize;
@@ -452,14 +452,13 @@ namespace mujoco::plugin::multiverse_connector
   MultiverseConnector::MultiverseConnector(MultiverseConfig config, const mjModel *m, mjData *d)
       : config_(std::move(config)), m_((mjModel *)m), d_(d)
   {
-    server_socket_addr = config_.server_host + ":" + config_.server_port;
-
-    host = config_.server_host;
-    port = config_.client_port;
+    host = config_.host;
+    server_port = config_.server_port;
+    client_port = config_.client_port;
 
     *world_time = 0.0;
 
-    printf("Multiverse Server: %s - Multiverse Client: %s:%s\n", server_socket_addr.c_str(), host.c_str(), port.c_str());
+    printf("Multiverse Server: %s:%s - Multiverse Client: %s:%s\n", host.c_str(), server_port.c_str(), host.c_str(), client_port.c_str());
 
     connect();
 

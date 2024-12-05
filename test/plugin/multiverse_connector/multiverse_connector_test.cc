@@ -162,7 +162,6 @@ namespace mujoco
       char error[1024] = {0};
       mjModel *model = mj_loadXML(xml_path.c_str(), nullptr, error, sizeof(error));
       ASSERT_THAT(model, testing::NotNull()) << error;
-      EXPECT_THAT(model->sensor_dim[0], 10);
       mj_deleteModel(model);
     }
 

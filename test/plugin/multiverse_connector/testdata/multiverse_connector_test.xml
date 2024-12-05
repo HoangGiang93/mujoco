@@ -2,7 +2,7 @@
   <extension>
     <plugin plugin="mujoco.multiverse_connector">
       <instance name="mujoco_client">
-        <config key="server_host" value="tcp://127.0.0.1"/>
+        <config key="host" value="tcp://127.0.0.1"/>
         <config key="server_port" value="7000"/>
         <config key="client_port" value="7500"/>
         <config key="world_name" value="world"/>
@@ -11,10 +11,6 @@
       </instance>
     </plugin>
   </extension>
-
-  <sensor>
-    <plugin plugin="mujoco.multiverse_connector" instance="mujoco_client" objtype="body" objname="world" />
-  </sensor>
 
   <worldbody/>
 </mujoco>
